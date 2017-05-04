@@ -29,13 +29,14 @@ type Processor interface {
 }
 
 type BaseProcessor struct {
-	req          *http.Request
-	lastId       string
-	data         []byte
-	urlResults   []*UrlResult
-	detailResult *DetailResult
-	historyUrl   string
-	biz          string
+	req             *http.Request
+	lastId          string
+	data            []byte
+	urlResults      []*UrlResult
+	detailResult    *DetailResult
+	historyUrl      string
+	biz             string
+	lastPublishTime time.Time
 
 	// The index of urls for detail page
 	currentIndex int
@@ -70,9 +71,11 @@ var (
 		`\\`, "", "&amp;amp;", "&",
 		"&amp;", "&", `\`, "",
 	)
-	urlRegex    = regexp.MustCompile(`http://mp.weixin.qq.com/s?[^#"',]*`)
-	idRegex     = regexp.MustCompile(`"id":(\d+)`)
-	MsgNotFound = errors.New("MsgLists not found")
+	urlRegex            = regexp.MustCompile(`http://mp.weixin.qq.com/s?[^#"',]*`)
+	idRegex             = regexp.MustCompile(`"id":(\d+)`)
+	publishTimeRegex    = regexp.MustCompile(`publish_time = "([\-\d]+)" \|\| ""`)
+	MsgNotFound         = errors.New("MsgLists not found")
+	PublishTimeNotFound = errors.New("Cannot parse article publish time")
 
 	TypeList   = "list"
 	TypeDetail = "detail"
@@ -206,6 +209,7 @@ func (p *BaseProcessor) processMain() error {
 	}
 
 	idMatcher := idRegex.FindAllStringSubmatch(msgs, -1)
+
 	if len(idMatcher) < 1 {
 		return stacktrace.Propagate(MsgNotFound, "Failed find id in  main")
 	}
@@ -244,9 +248,22 @@ func (p *BaseProcessor) ProcessPages() (err error) {
 		return stacktrace.Propagate(err, "Failed get page id")
 	}
 	lastId := idMatcher[len(idMatcher)-1][1]
+
 	for _, u := range result {
 		p.urlResults = append(p.urlResults, &UrlResult{Url: u})
 	}
+
+	if rootConfig.DateEnd != nil {
+		if lastPublishedAt, err := getArticleTime(p.urlResults[len(p.urlResults)-1].Url); err == nil {
+			p.logf("Last crawled article is published at: %s", lastPublishedAt)
+
+			if p.lastPublishTime.Before(rootConfig.DateEnd) {
+				p.logf("End date reached, stop crawling")
+				return nil
+			}
+		}
+	}
+
 	if lastId != "" {
 		if p.lastId == lastId {
 			i, _ := strconv.Atoi(lastId)
@@ -297,6 +314,35 @@ func (p *BaseProcessor) sendCheckurl() (err error) {
 func genId(urlStr string) string {
 	uri, _ := url.ParseRequestURI(urlStr)
 	return hashKey(uri.Query().Get("__biz") + "_" + uri.Query().Get("mid") + "_" + uri.Query().Get("idx"))
+}
+
+func getArticleTime(articleUrl string) (*time.Time, error) {
+	response, err := http.Get(articleUrl)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if response.StatusCode != 200 {
+		return nil, PublishTimeNotFound
+	}
+
+	responseBody, _ := ioutil.ReadAll(response.Body)
+	defer response.Body.Close()
+
+	publishedTimeString := publishTimeRegex.FindStringSubmatch(string(responseBody))
+
+	if len(publishedTimeString) < 2 {
+		return nil, PublishTimeNotFound
+	}
+
+	lastPublishTime, err := time.Parse("2006-01-02", publishedTimeString[1])
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &lastPublishTime, nil
 }
 
 func hashKey(key string) string {

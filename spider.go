@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/elazarl/goproxy"
 )
@@ -76,10 +77,11 @@ var (
 )
 
 type Config struct {
-	Verbose     bool // Debug
-	AutoScroll  bool // Auto scroll page to hijack all history articles
-	Compress    bool // To ingore other request just to save the net cost
-	SleepSecond int  // Random seconds to sleep
+	Verbose     bool      // Debug
+	AutoScroll  bool      // Auto scroll page to hijack all history articles
+	Compress    bool      // To ingore other request just to save the net cost
+	SleepSecond int       // Random seconds to sleep
+	DateEnd     time.Time // The date of article which crawler will stop
 }
 
 func InitConfig(conf *Config) {
