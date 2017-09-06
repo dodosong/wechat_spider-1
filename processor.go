@@ -253,7 +253,7 @@ func (p *BaseProcessor) ProcessPages() (err error) {
 		p.urlResults = append(p.urlResults, &UrlResult{Url: u})
 	}
 
-	if rootConfig.DateEnd != nil {
+	if !rootConfig.DateEnd.IsZero() {
 		if lastPublishedAt, err := getArticleTime(p.urlResults[len(p.urlResults)-1].Url); err == nil {
 			p.logf("Last crawled article is published at: %s", lastPublishedAt)
 
